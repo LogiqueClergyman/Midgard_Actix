@@ -1,0 +1,10 @@
+[workspace]
+members = [
+    "populate/script-1",
+    "populate/script-2",
+    "populate/script-3",
+    "populate/script-4",
+    "server",
+    "cron-job",
+    "shared"
+]
