@@ -1,20 +1,22 @@
-use std::sync::Arc;
-
-// src/routes/runepool_history.rs
 use crate::models::runepool_history::RunepoolHistory;
 use actix_web::{web, HttpResponse, Responder};
-use serde::{Deserialize, Serialize};
-use sqlx::{PgPool, Pool, Postgres};
+use serde::Deserialize;
+use sqlx::{Pool, Postgres};
+use std::sync::Arc;
 #[derive(Deserialize, Debug)]
 pub struct QueryParams {
     pub interval: Option<String>,
     pub from: Option<i64>,
     pub to: Option<i64>,
-    pub count: Option<i64>,
     pub sort_by: Option<String>,
     pub order: Option<String>,
-    pub page: Option<i64>,
-    pub limit: Option<i64>,
+    pub page: Option<i32>,
+    pub limit: Option<i32>,
+    pub count: Option<i32>,
+    pub units_lt: Option<i64>,
+    pub units_eq: Option<i64>,
+    pub count_lt: Option<i32>,
+    pub count_eq: Option<i32>,
     pub units_gt: Option<i64>,
     pub count_gt: Option<i32>,
 }
@@ -42,6 +44,7 @@ fn build_query(query: &QueryParams) -> String {
     println!("{:?}", query);
     let mut where_clauses = vec![];
 
+    // Time range filters
     if let Some(from) = query.from {
         where_clauses.push(format!("starttime >= {}", from));
     }
@@ -50,20 +53,42 @@ fn build_query(query: &QueryParams) -> String {
         where_clauses.push(format!("endtime <= {}", to));
     }
 
+    // Filters for `units`
     if let Some(units_gt) = query.units_gt {
         where_clauses.push(format!("units > {}", units_gt));
     }
 
+    if let Some(units_lt) = query.units_lt {
+        where_clauses.push(format!("units < {}", units_lt));
+    }
+
+    if let Some(units_eq) = query.units_eq {
+        where_clauses.push(format!("units = {}", units_eq));
+    }
+
+    // Filters for `count`
     if let Some(count_gt) = query.count_gt {
         where_clauses.push(format!("count > {}", count_gt));
     }
 
+    if let Some(count_lt) = query.count_lt {
+        where_clauses.push(format!("count < {}", count_lt));
+    }
+
+    if let Some(count_eq) = query.count_eq {
+        where_clauses.push(format!("count = {}", count_eq));
+    }
+
+    // Combining all WHERE clauses
     let where_sql = if where_clauses.is_empty() {
         "TRUE".to_string()
     } else {
         where_clauses.join(" AND ")
     };
-    println!("{}", where_sql);
+
+    println!("WHERE clause: {}", where_sql);
+
+    // Sorting and ordering logic
     let sort_by = query
         .sort_by
         .clone()
@@ -71,80 +96,82 @@ fn build_query(query: &QueryParams) -> String {
     let order = query.order.clone().unwrap_or_else(|| "asc".to_string());
     let order_sql = if order == "desc" { "DESC" } else { "ASC" };
 
+    // Handle `count` and pagination
+    let hard_limit = query.count.unwrap_or(400).min(400); // Cap max results to 400
+    let (pagination_limit, offset) = paginate(query.page, query.limit);
+    let effective_limit = hard_limit.min(pagination_limit); // Use the smaller limit
+
+    // Handling interval
     if let Some(interval) = &query.interval {
-        let interval_seconds = match interval.as_str() {
-            "hour" => 3600,
-            "day" => 86400,
-            "week" => 604800,
-            "month" => 2592000, // Approximation for a 30-day month
-            "year" => 31536000,
-            _ => 3600, // Default to hourly if an invalid interval is provided
+        let interval_sql = match interval.as_str() {
+            "hour" => "hour",
+            "day" => "day",
+            "week" => "week",
+            "month" => "month",
+            "quarter" => "quarter",
+            "year" => "year",
+            _ => "hour", // Default to hourly if an invalid interval is provided
         };
 
-        let count = query.count.unwrap_or(1).min(400);
-        let (limit, offset) = paginate(query.page, query.limit);
         if interval == "hour" {
             // Directly query hourly data
             format!(
                 r#"
-                    SELECT starttime, endtime, units, count
-                    FROM runepool_history
-                    WHERE {}
-                    ORDER BY starttime {}
-                    LIMIT {}
-                    "#,
-                where_sql, order_sql, count
-            )
-        } else {
-            // Handle larger intervals (day, week, etc.)
-            format!(
-                r#"
-                    WITH grouped_data AS (
-                        SELECT
-                            (starttime / {interval_seconds}) * {interval_seconds} AS bracket_start,
-                            starttime, endtime, units, count,
-                            ROW_NUMBER() OVER (
-                                PARTITION BY (starttime / {interval_seconds})
-                                ORDER BY starttime DESC
-                            ) AS rank
-                        FROM runepool_history
-                        WHERE {where_sql}
-                    )
-                    SELECT
-                        MIN(bracket_start) AS starttime, -- First hour of the bracket
-                        MAX(starttime) AS endtime,      -- Last hour of the bracket
-                        units,
-                        count
-                    FROM grouped_data
-                    WHERE rank = 1
-                    GROUP BY bracket_start, units, count
-                    ORDER BY starttime {order_sql}
-                    LIMIT {limit} OFFSET {offset}
-                    "#,
-                interval_seconds = interval_seconds,
-                where_sql = where_sql,
-                order_sql = order_sql,
-                limit = limit,
-                offset = offset
-            )
-        }
-    } else {
-        // Fallback for no interval specified
-        let (limit, offset) = paginate(query.page, query.limit);
-
-        format!(
-            r#"
                 SELECT starttime, endtime, units, count
                 FROM runepool_history
                 WHERE {}
-                ORDER BY {} {}
-                LIMIT {} OFFSET {}
+                ORDER BY starttime {}
+                LIMIT {}
+                OFFSET {}
                 "#,
-            where_sql, sort_by, order_sql, limit, offset
+                where_sql, order_sql, effective_limit, offset
+            )
+        } else {
+            // Aggregate for larger intervals
+            format!(
+                r#"
+        WITH grouped_data AS (
+            SELECT
+                EXTRACT(EPOCH FROM date_trunc('{}', to_timestamp(starttime)))::BIGINT AS bracket_start,
+                starttime, endtime, units, count,
+                ROW_NUMBER() OVER (
+                    PARTITION BY date_trunc('{}', to_timestamp(starttime))
+                    ORDER BY starttime DESC
+                ) AS rank
+            FROM runepool_history
+            WHERE {}
+        )
+        SELECT
+            MIN(bracket_start) AS starttime,  -- First hour of the bracket
+            MAX(starttime) AS endtime,       -- Last hour of the bracket
+            units,
+            count
+        FROM grouped_data
+        WHERE rank = 1
+        GROUP BY bracket_start, units, count
+        ORDER BY starttime {}
+        LIMIT {}
+        OFFSET {}
+        "#,
+                interval_sql, interval_sql, where_sql, order_sql, effective_limit, offset
+            )
+        }
+    } else {
+        // No interval specified, default behavior
+        format!(
+            r#"
+            SELECT starttime, endtime, units, count
+            FROM runepool_history
+            WHERE {}
+            ORDER BY {} {}
+            LIMIT {} OFFSET {}
+            "#,
+            where_sql, sort_by, order_sql, effective_limit, offset
         )
     }
 }
-fn paginate(page: Option<i64>, limit: Option<i64>) -> (i64, i64) {
+
+fn paginate(page: Option<i32>, limit: Option<i32>) -> (i32, i32) {
     let page = page.unwrap_or(1);
     let limit = limit.unwrap_or(100);
     let offset = (page - 1) * limit;

@@ -12,3 +12,4 @@ serde_json = "1.0"
 sqlx = { version = "0.8.2", features = ["runtime-tokio-rustls", "macros", "postgres", "chrono"] }
 tokio = { version = "1.41.1", features = ["full"] }
 chrono = "0.4.38"
+rust_decimal = "1.36.0"

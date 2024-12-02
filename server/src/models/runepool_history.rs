@@ -4,8 +4,8 @@ use sqlx::prelude::FromRow;
 
 #[derive(Serialize, Deserialize, FromRow, Debug)]
 pub struct RunepoolHistory {
-    pub starttime: i64,  // Adjusted to match database column name
-    pub endtime: i64,    // Adjusted to match database column name
+    pub starttime: i64,
+    pub endtime: i64,
     pub units: i64,
     pub count: i32,
 }
