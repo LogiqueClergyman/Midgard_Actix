@@ -1,9 +1,9 @@
-use sqlx::{migrate::Migrator, Error, PgPool};
+use sqlx::{migrate::Migrator, Error};
 use std::fs;
 use std::path::Path;
 
 pub async fn run_migrations(pool: &sqlx::PgPool) -> Result<(), Error> {
-    let migrations_dir = Path::new("../../migrations");
+    let migrations_dir = Path::new("../migrations");
     println!("Running migrations from: {}", migrations_dir.display());
     if !migrations_dir.exists() {
         println!("Migration directory does not exist.");

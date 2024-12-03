@@ -3,8 +3,6 @@ use lazy_static::lazy_static;
 use sqlx::{postgres::PgPool, Error};
 use std::{env, sync::Arc};
 use tokio::sync::Mutex;
-use tokio::fs::File;
-use tokio::io::AsyncReadExt;
 lazy_static! {
     static ref DB_POOL: tokio::sync::OnceCell<Arc<Mutex<PgPool>>> = tokio::sync::OnceCell::new();
 }

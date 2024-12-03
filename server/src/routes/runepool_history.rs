@@ -1,25 +1,8 @@
-use crate::models::runepool_history::RunepoolHistory;
+use super::utils::{paginate, add_condition};
+use crate::models::runepool_history::{QueryParams, RunepoolHistory};
 use actix_web::{web, HttpResponse, Responder};
-use serde::Deserialize;
 use sqlx::{Pool, Postgres};
 use std::sync::Arc;
-#[derive(Deserialize, Debug)]
-pub struct QueryParams {
-    pub interval: Option<String>,
-    pub from: Option<i64>,
-    pub to: Option<i64>,
-    pub sort_by: Option<String>,
-    pub order: Option<String>,
-    pub page: Option<i32>,
-    pub limit: Option<i32>,
-    pub count: Option<i32>,
-    pub units_lt: Option<i64>,
-    pub units_eq: Option<i64>,
-    pub count_lt: Option<i32>,
-    pub count_eq: Option<i32>,
-    pub units_gt: Option<i64>,
-    pub count_gt: Option<i32>,
-}
 
 pub async fn get_runepool_history(
     pool: web::Data<Arc<tokio::sync::Mutex<Pool<Postgres>>>>,
@@ -96,11 +79,9 @@ fn build_query(query: &QueryParams) -> String {
     let order = query.order.clone().unwrap_or_else(|| "asc".to_string());
     let order_sql = if order == "desc" { "DESC" } else { "ASC" };
 
-    // Handle `count` and pagination
-    let hard_limit = query.count.unwrap_or(400).min(400); // Cap max results to 400
-    let (pagination_limit, offset) = paginate(query.page, query.limit);
-    let effective_limit = hard_limit.min(pagination_limit); // Use the smaller limit
-
+    let hard_limit = query.count.unwrap_or(400).min(400);
+    let (pagination_limit, offset) = paginate(query.page, query.limit, query.count);
+    let effective_limit = hard_limit.min(pagination_limit);
     // Handling interval
     if let Some(interval) = &query.interval {
         let interval_sql = match interval.as_str() {
@@ -169,11 +150,4 @@ fn build_query(query: &QueryParams) -> String {
             where_sql, sort_by, order_sql, effective_limit, offset
         )
     }
-}
-
-fn paginate(page: Option<i32>, limit: Option<i32>) -> (i32, i32) {
-    let page = page.unwrap_or(1);
-    let limit = limit.unwrap_or(100);
-    let offset = (page - 1) * limit;
-    (limit, offset)
 }

@@ -1,33 +1,8 @@
-use crate::models::swap_history::SwapHistory;
+use super::utils::{add_condition, paginate};
+use crate::models::swap_history::{SwapHistory, SwapQueryParams};
 use actix_web::{web, HttpResponse, Responder};
-use serde::Deserialize;
 use sqlx::{Pool, Postgres};
 use std::sync::Arc;
-
-#[derive(Deserialize, Debug)]
-pub struct SwapQueryParams {
-    pub interval: Option<String>,
-    pub from: Option<i64>,
-    pub to: Option<i64>,
-    pub sort_by: Option<String>,
-    pub order: Option<String>,
-    pub page: Option<i32>,
-    pub limit: Option<i32>,
-    pub count: Option<i32>,
-
-    // Dynamic filters for swap_history fields
-    pub to_asset_volume_gt: Option<i64>,
-    pub to_asset_volume_lt: Option<i64>,
-    pub to_asset_volume_eq: Option<i64>,
-
-    pub total_volume_usd_gt: Option<f64>,
-    pub total_volume_usd_lt: Option<f64>,
-    pub total_volume_usd_eq: Option<f64>,
-
-    pub rune_price_usd_gt: Option<f64>,
-    pub rune_price_usd_lt: Option<f64>,
-    pub rune_price_usd_eq: Option<f64>,
-}
 
 pub async fn get_swap_history(
     pool: web::Data<Arc<tokio::sync::Mutex<Pool<Postgres>>>>,
@@ -131,7 +106,7 @@ fn build_swap_query(query: &SwapQueryParams) -> String {
     let order = query.order.clone().unwrap_or_else(|| "asc".to_string());
     let order_sql = if order == "desc" { "DESC" } else { "ASC" };
     let hard_limit = query.count.unwrap_or(400).min(400);
-    let (pagination_limit, offset) = paginate(query.page, query.limit);
+    let (pagination_limit, offset) = paginate(query.page, query.limit, query.count);
     let effective_limit = hard_limit.min(pagination_limit);
 
     if let Some(interval) = &query.interval {
@@ -263,22 +238,4 @@ fn build_swap_query(query: &SwapQueryParams) -> String {
             offset = offset
         )
     }
-}
-
-fn add_condition<T: std::fmt::Display>(
-    where_clauses: &mut Vec<String>,
-    column: &str,
-    value: &Option<T>,
-    operator: &str,
-) {
-    if let Some(val) = value {
-        where_clauses.push(format!("{} {} {}", column, operator, val));
-    }
-}
-
-// Helper function for pagination
-fn paginate(page: Option<i32>, limit: Option<i32>) -> (i32, i32) {
-    let limit = limit.unwrap_or(10).max(1).min(100);
-    let offset = page.unwrap_or(1).saturating_sub(1) * limit;
-    (limit, offset)
 }

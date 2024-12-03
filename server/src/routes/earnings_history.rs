@@ -1,64 +1,8 @@
-// use crate::models::earnings_history::EarningHistoryResponse;
+use super::utils::{add_condition, paginate};
+use crate::models::earnings_history::{EarningHistoryQueryParams, EarningHistoryResponse};
 use actix_web::{web, HttpResponse, Responder};
-use serde::{Deserialize, Serialize};
-use serde_json::Value;
-use sqlx::{
-    prelude::{FromRow, Type},
-    Pool, Postgres,
-};
+use sqlx::{Pool, Postgres};
 use std::sync::Arc;
-#[derive(Serialize, Deserialize, FromRow, Debug, Type)]
-pub struct EarningHistoryResponse {
-    pub avgnodecount: f64,
-    pub blockrewards: i64,
-    pub bondingearnings: i64,
-    pub earnings: i64,
-    pub endtime: i64,
-    pub liquidityearnings: i64,
-    pub liquidityfees: i64,
-    pub runepriceusd: f64,
-    pub starttime: i64,
-    pub pools: Vec<Value>,
-}
-
-#[derive(Serialize, Deserialize, FromRow, Debug, Type)]
-#[sqlx(type_name = "earning_history_nested")]
-pub struct EarningHistoryNestedResponse {
-    pub pool: String,
-    pub asset_liquidity_fees: i64,
-    pub earnings: i64,
-    pub rewards: i64,
-    pub rune_liquidity_fees: i64,
-    pub saver_earning: i64,
-    pub total_liquidity_fees_rune: i64,
-}
-
-#[derive(Deserialize, Debug)]
-pub struct EarningHistoryQueryParams {
-    pub interval: Option<String>,
-    pub from: Option<i64>,
-    pub to: Option<i64>,
-    pub sort_by: Option<String>,
-    pub order: Option<String>,
-    pub page: Option<i32>,
-    pub limit: Option<i32>,
-    pub count: Option<i32>,
-
-    // Dynamic filters for earning_history fields
-    pub avg_node_count_gt: Option<f64>,
-    pub avg_node_count_lt: Option<f64>,
-    pub block_rewards_gt: Option<i64>,
-    pub block_rewards_lt: Option<i64>,
-
-    pub earnings_gt: Option<i64>,
-    pub earnings_lt: Option<i64>,
-    pub liquidity_earnings_gt: Option<i64>,
-    pub liquidity_earnings_lt: Option<i64>,
-
-    pub rune_price_usd_gt: Option<f64>,
-    pub rune_price_usd_lt: Option<f64>,
-    pub rune_price_usd_eq: Option<f64>,
-}
 
 pub async fn get_earning_history(
     pool: web::Data<Arc<tokio::sync::Mutex<Pool<Postgres>>>>,
@@ -164,13 +108,20 @@ fn build_earning_history_query(query: &EarningHistoryQueryParams) -> String {
     let order = query.order.clone().unwrap_or_else(|| "asc".to_string());
     let order_sql = if order == "desc" { "DESC" } else { "ASC" };
     let hard_limit = query.count.unwrap_or(400).min(400);
-    let (pagination_limit, offset) = paginate(query.page, query.limit);
+    let (pagination_limit, offset) = paginate(query.page, query.limit, query.count);
     let effective_limit = hard_limit.min(pagination_limit);
-
+    let interval_seconds = match query.interval.as_deref() {
+        Some("day") => 86400,     // 24 * 60 * 60
+        Some("week") => 604800,   // 7 * 24 * 60 * 60
+        Some("month") => 2592000, // Approximate 30 days
+        _ => 3600,                // Default to hourly (1 hour = 60 * 60)
+    };
     // Final SQL Query
     format!(
         r#"
-        SELECT 
+    WITH grouped_data AS (
+        SELECT
+            (starttime / {interval_seconds}) * {interval_seconds} AS bracket_start,
             eh.avgnodecount ::FLOAT8 AS avgnodecount,
             eh.blockrewards,
             eh.bondingearnings,
@@ -180,47 +131,55 @@ fn build_earning_history_query(query: &EarningHistoryQueryParams) -> String {
             eh.liquidityfees,
             eh.runepriceusd,
             eh.starttime,
+            eh.pools,
+            ROW_NUMBER() OVER (
+                PARTITION BY (starttime / {interval_seconds})
+                ORDER BY {sort_by} DESC
+            ) AS rank,
             (
                 SELECT array_agg(
                     jsonb_build_object(
                         'pool', en.pool,
-                        'assetLiquidityFees', en.assetliquidityfees,
+                        'asset_liquidity_fees', en.assetliquidityfees,
                         'earnings', en.earnings,
                         'rewards', en.rewards,
-                        'runeLiquidityFees', en.runeliquidityfees,
-                        'saverEarning', en.saverearning,
-                        'totalLiquidityFeesRune', en.totalliquidityfeesrune
+                        'rune_liquidity_fees', en.runeliquidityfees,
+                        'saver_earning', en.saverearning,
+                        'total_liquidity_fees_rune', en.totalliquidityfeesrune
                     )
                 )
                 FROM earning_history_nested en
                 WHERE en.id = ANY(eh.pools)
-            ) AS pools
+            ) AS nested_pools
         FROM earning_history eh
         WHERE {where_sql}
-        ORDER BY {sort_by} {order_sql}
-        LIMIT {limit} OFFSET {offset}
-        "#,
+    )
+    SELECT
+        MIN(bracket_start) AS starttime,
+        MAX(starttime) AS endtime,
+        MIN(starttime) AS first_starttime,
+        MAX(endtime) AS last_endtime,
+        avgnodecount,
+        blockrewards,
+        bondingearnings,
+        earnings,
+        liquidityearnings,
+        liquidityfees,
+        runepriceusd,
+        nested_pools AS pools
+    FROM grouped_data
+    WHERE rank = 1
+    GROUP BY 
+        avgnodecount, blockrewards, bondingearnings, earnings, 
+        liquidityearnings, liquidityfees, runepriceusd, nested_pools
+    ORDER BY {sort_by} {order_sql}
+    LIMIT {limit} OFFSET {offset}
+    "#,
+        interval_seconds = interval_seconds,
         where_sql = where_sql,
         sort_by = sort_by,
         order_sql = order_sql,
         limit = effective_limit,
         offset = offset
     )
-}
-
-fn add_condition<T: std::fmt::Display>(
-    where_clauses: &mut Vec<String>,
-    column: &str,
-    value: &Option<T>,
-    operator: &str,
-) {
-    if let Some(val) = value {
-        where_clauses.push(format!("{} {} {}", column, operator, val));
-    }
-}
-
-fn paginate(page: Option<i32>, limit: Option<i32>) -> (i32, i32) {
-    let limit = limit.unwrap_or(10).max(1).min(100);
-    let offset = page.unwrap_or(1).saturating_sub(1) * limit;
-    (limit, offset)
 }

@@ -1,44 +1,17 @@
-mod swaps_history;
 use bigdecimal::BigDecimal;
-use chrono::{NaiveDate, Utc};
-pub use swaps_history::SwapsHistory;
+use chrono::Utc;
 use reqwest::get;
 use serde_json::Value;
-use shared::{create_db_pool, run_migrations};
 use sqlx::Error;
 use std::str::FromStr;
 
-static LAST_SUCCESSFUL_ENTRY: std::sync::Mutex<i64> = std::sync::Mutex::new(0);
+use crate::models::swaps_history::SwapsHistory;
 
-#[tokio::main]
-async fn main() {
-    let pool = create_db_pool().await.unwrap();
-    let pool = pool.lock().await;
-    run_migrations(&pool).await.unwrap();
-    let res = fetch_and_insert_data(&pool).await;
-    if let Err(e) = res {
-        eprintln!("Error: {:?}", e);
-    }
-}
+use super::utils::get_last_successful_entry_for_table;
 
-async fn fetch_and_insert_data(pool: &sqlx::PgPool) -> Result<(), Error> {
-    let start_date = NaiveDate::from_ymd_opt(2024, 10, 1)
-        .unwrap_or_else(|| panic!("Invalid date"))
-        .and_hms_opt(0, 0, 0)
-        .unwrap();
-
-    let mut from_time = start_date.timestamp();
-
-    // Retrieve the last successful entry's endTime from the FetchState table, defaulting to 1 Oct 2024 if not found
-    let last_successful_entry = get_last_successful_entry(&pool).await.unwrap_or_else(|_| {
-        println!("{:?}", start_date.timestamp());
-        start_date.timestamp() // Make sure to convert to DateTime<Utc>
-    });
-    from_time = last_successful_entry;
-
-    // Set end time as the current time
+pub async fn fetch_and_insert_data(pool: &sqlx::PgPool) -> Result<(), Error> {
+    let mut from_time = get_last_successful_entry_for_table(pool, "swaps_history").await;
     let end_time = Utc::now().timestamp();
-    let mut count = 0;
 
     loop {
         let url = format!(
@@ -233,7 +206,6 @@ async fn fetch_and_insert_data(pool: &sqlx::PgPool) -> Result<(), Error> {
                         .unwrap(),
                 };
                 println!("{:?}", swap_history);
-                // Insert the data into the database using SwapHistory struct
                 match sqlx::query!(
                     r#"
                     INSERT INTO swap_history (
@@ -321,26 +293,4 @@ async fn fetch_and_insert_data(pool: &sqlx::PgPool) -> Result<(), Error> {
         }
     }
     Ok(())
-}
-
-async fn get_last_successful_entry(pool: &sqlx::PgPool) -> Result<i64, Error> {
-    let result = sqlx::query!(
-        r#"
-        SELECT last_successful_entry FROM fetch_state WHERE table_name = 'swap_history'
-        "#,
-    )
-    .fetch_optional(pool)
-    .await?;
-    let default_value = NaiveDate::from_ymd_opt(2024, 10, 1)
-        .unwrap_or_else(|| panic!("Invalid date"))
-        .and_hms_opt(0, 0, 0)
-        .unwrap()
-        .timestamp();
-    let res = result
-        .map(|r| r.last_successful_entry)
-        .unwrap_or(default_value.into());
-    if res == 0 {
-        return Ok(default_value.into());
-    }
-    Ok(res)
 }

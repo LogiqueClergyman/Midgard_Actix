@@ -42,3 +42,28 @@ pub struct SwapHistory {
     pub averageslip: f64,                // Weighted average slip (basis points) for all swaps
     pub runepriceusd: f64,               // Price of Rune in USD
 }
+
+#[derive(Deserialize, Debug)]
+pub struct SwapQueryParams {
+    pub interval: Option<String>,
+    pub from: Option<i64>,
+    pub to: Option<i64>,
+    pub sort_by: Option<String>,
+    pub order: Option<String>,
+    pub page: Option<i32>,
+    pub limit: Option<i32>,
+    pub count: Option<i32>,
+
+    // Dynamic filters for swap_history fields
+    pub to_asset_volume_gt: Option<i64>,
+    pub to_asset_volume_lt: Option<i64>,
+    pub to_asset_volume_eq: Option<i64>,
+
+    pub total_volume_usd_gt: Option<f64>,
+    pub total_volume_usd_lt: Option<f64>,
+    pub total_volume_usd_eq: Option<f64>,
+
+    pub rune_price_usd_gt: Option<f64>,
+    pub rune_price_usd_lt: Option<f64>,
+    pub rune_price_usd_eq: Option<f64>,
+}
