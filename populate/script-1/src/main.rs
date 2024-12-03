@@ -1,45 +1,53 @@
-mod model;
+mod depth_price_history;
 use bigdecimal::BigDecimal;
 use chrono::{NaiveDate, Utc};
-pub use model::AssetPriceHistory;
+pub use depth_price_history::DepthPriceHistory;
 use reqwest::get;
 use serde_json::Value;
 use shared::{create_db_pool, run_migrations};
-use sqlx::Error;
-use std::{default, str::FromStr};
-use tokio::{signal::ctrl_c, sync::Mutex};
-static LAST_SUCCESSFUL_ENTRY: std::sync::Mutex<i64> = std::sync::Mutex::new(0);
+use sqlx::{Error, Row};
+use std::str::FromStr;
 
 #[tokio::main]
 async fn main() {
-    let pool = create_db_pool().await.unwrap();
+    let pool = create_db_pool().await.expect(
+        "Failed to create database pool. Ensure the database server is running and accessible.",
+    );
     let pool = pool.lock().await;
     run_migrations(&pool).await.unwrap();
     let res = fetch_and_insert_data(&pool).await;
-    update_last_successful_entry(&pool).await.unwrap();
     if let Err(e) = res {
         eprintln!("Error: {:?}", e);
     }
 }
-async fn fetch_and_insert_data(pool: &sqlx::PgPool) -> Result<(), Error> {
-    let start_date = NaiveDate::from_ymd_opt(2024, 10, 1)
+async fn get_last_successful_entry_for_table(pool: &sqlx::PgPool, table_name: &str) -> i64 {
+    let default_timestamp = NaiveDate::from_ymd_opt(2024, 10, 1)
         .unwrap_or_else(|| panic!("Invalid date"))
         .and_hms_opt(0, 0, 0)
-        .unwrap();
+        .unwrap()
+        .timestamp();
 
-    let mut from_time = start_date.timestamp();
-    // Retrieve the last successful entry's endTime from the FetchState table, defaulting to 1 Oct 2024 if not found
+    let query = format!(
+        "SELECT COALESCE(MAX(endtime), $1) as last_successful_entry FROM {}",
+        table_name
+    );
 
-    let last_successful_entry = get_last_successful_entry(&pool).await.unwrap_or_else(|_| {
-        println!("{:?}", start_date.timestamp());
-        start_date.timestamp() // Make sure to convert to DateTime<Utc>
-    });
-    from_time = last_successful_entry;
-    // println!("{:?}", from_time);
+    match sqlx::query(&query)
+        .bind(default_timestamp)
+        .fetch_one(pool)
+        .await
+    {
+        Ok(row) => row
+            .get::<Option<i64>, _>("last_successful_entry")
+            .unwrap_or(default_timestamp),
+        Err(_) => default_timestamp,
+    }
+}
+async fn fetch_and_insert_data(pool: &sqlx::PgPool) -> Result<(), Error> {
+    let mut from_time = get_last_successful_entry_for_table(&pool, "depth_price_history").await;
     // Set end time as the current time
     let end_time = Utc::now().timestamp();
     // println!("{:?}", end_time);
-    let mut count = 0;
     // Loop to fetch data in chunks of 400
     loop {
         // Construct the API request URL with `from_time` and `count=400`
@@ -54,7 +62,7 @@ async fn fetch_and_insert_data(pool: &sqlx::PgPool) -> Result<(), Error> {
         if let Some(intervals) = response["intervals"].as_array() {
             // Loop through the data and insert each entry into the database
             for entry in intervals {
-                let asset_price_history = AssetPriceHistory {
+                let asset_price_history = DepthPriceHistory {
                     assetDepth: entry["assetDepth"]
                         .as_str()
                         .unwrap()
@@ -133,8 +141,6 @@ async fn fetch_and_insert_data(pool: &sqlx::PgPool) -> Result<(), Error> {
                         return Err(e);
                     }
                 };
-                // count += 1;
-                *LAST_SUCCESSFUL_ENTRY.lock().unwrap() = asset_price_history.endTime;
             }
             let last_entry = intervals.last().unwrap();
             let last_end_time = last_entry["endTime"]
@@ -143,54 +149,14 @@ async fn fetch_and_insert_data(pool: &sqlx::PgPool) -> Result<(), Error> {
                 .parse::<i64>()
                 .unwrap();
 
-            // If the `end_time` of the last entry is greater than or equal to current time, we are done
             if last_end_time >= end_time {
                 break;
             }
 
-            // Otherwise, update `from_time` to the `end_time` of the last entry
             from_time = last_end_time;
         } else {
-            break; // No more data, exit loop
+            break;
         }
     }
-    Ok(())
-}
-
-// Fetch the last successful entry's `endTime` from the FetchState table
-async fn get_last_successful_entry(pool: &sqlx::PgPool) -> Result<i64, Error> {
-    let result = sqlx::query!(
-        r#"
-        SELECT last_successful_entry FROM fetch_state WHERE table_name = 'depth_price_history'
-        "#,
-    )
-    .fetch_optional(pool)
-    .await?;
-    let default_value = NaiveDate::from_ymd_opt(2024, 10, 1)
-        .unwrap_or_else(|| panic!("Invalid date"))
-        .and_hms_opt(0, 0, 0)
-        .unwrap()
-        .timestamp();
-    let res = result.map(|r| r.last_successful_entry).unwrap_or(default_value.into());
-    if res == 0 {
-        return Ok(default_value.into());
-    }
-    Ok(res)
-}
-
-// Update the `last_successful_entry` in the FetchState table (only once when completed or failed)
-async fn update_last_successful_entry(pool: &sqlx::PgPool) -> Result<(), Error> {
-    let end_time = *LAST_SUCCESSFUL_ENTRY.lock().unwrap();
-    sqlx::query!(
-        r#"
-        INSERT INTO fetch_state (table_name, last_successful_entry)
-        VALUES ('depth_price_history', $1)
-        ON CONFLICT (table_name)
-        DO UPDATE SET last_successful_entry = EXCLUDED.last_successful_entry
-        "#,
-        end_time
-    )
-    .execute(pool)
-    .await?;
     Ok(())
 }

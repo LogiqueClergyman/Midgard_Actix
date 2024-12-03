@@ -1,13 +1,11 @@
-mod model;
+mod runepool_history;
 use chrono::{NaiveDate, Utc};
-pub use model::RunepoolHistory;
+pub use runepool_history::RunepoolHistory;
 use reqwest::get;
 use serde_json::Value;
 use shared::{create_db_pool, run_migrations};
 use sqlx::Error;
-use std::str::FromStr;
 
-static LAST_SUCCESSFUL_ENTRY: std::sync::Mutex<i64> = std::sync::Mutex::new(0);
 
 #[tokio::main]
 async fn main() {
@@ -15,8 +13,7 @@ async fn main() {
     let pool = pool.lock().await;
     run_migrations(&pool).await.unwrap();
     let res = fetch_and_insert_data(&pool).await;
-    update_last_successful_entry(&pool).await.unwrap();
-    if let Err(e) = fetch_and_insert_data(&pool).await {
+    if let Err(e) = res {
         eprintln!("Error: {:?}", e);
     }
 }
@@ -90,8 +87,6 @@ async fn fetch_and_insert_data(pool: &sqlx::PgPool) -> Result<(), Error> {
                     }
                 };
 
-                // Update the last successful entry timestamp
-                *LAST_SUCCESSFUL_ENTRY.lock().unwrap() = runepool_history.endTime;
             }
 
             let last_entry = intervals.last().unwrap();
@@ -136,21 +131,4 @@ async fn get_last_successful_entry(pool: &sqlx::PgPool) -> Result<i64, Error> {
         return Ok(default_value.into());
     }
     Ok(res)
-}
-
-// Update the `last_successful_entry` in the FetchState table (only once when completed or failed)
-async fn update_last_successful_entry(pool: &sqlx::PgPool) -> Result<(), Error> {
-    let end_time = *LAST_SUCCESSFUL_ENTRY.lock().unwrap();
-    sqlx::query!(
-        r#"
-        INSERT INTO fetch_state (table_name, last_successful_entry)
-        VALUES ('runepool_history', $1)
-        ON CONFLICT (table_name)
-        DO UPDATE SET last_successful_entry = EXCLUDED.last_successful_entry
-        "#,
-        end_time
-    )
-    .execute(pool)
-    .await?;
-    Ok(())
 }

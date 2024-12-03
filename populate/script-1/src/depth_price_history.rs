@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Debug)]
-pub struct AssetPriceHistory {
+pub struct DepthPriceHistory {
     pub id: Option<i32>,
     pub assetDepth: i64,
     pub assetPrice: f64,

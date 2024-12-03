@@ -3,7 +3,10 @@ pub mod models;
 pub mod routes;
 pub mod services;
 use actix_web::{web, App, HttpServer};
-use routes::{depth_price_history::get_depth_price_history, runepool_history::get_runepool_history};
+use routes::{
+    depth_price_history::get_depth_price_history, runepool_history::get_runepool_history,
+    swaps_history::get_swap_history, earnings_history::get_earning_history,
+};
 use shared::create_db_pool;
 #[actix_web::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -25,13 +28,38 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 "/runepool_history",
                 web::get().to({
                     let value = pool.clone();
-                    move |query: web::Query<routes::runepool_history::QueryParams>| get_runepool_history(value.clone(), query)
+                    move |query: web::Query<routes::runepool_history::QueryParams>| {
+                        get_runepool_history(value.clone(), query)
+                    }
                 }),
             )
-            .route("/depth_history", web::get().to({
-                let value = pool.clone();
-                move | query: web::Query<routes::depth_price_history::QueryParams>| get_depth_price_history(value.clone(), query)
-            }))
+            .route(
+                "/depth_history",
+                web::get().to({
+                    let value = pool.clone();
+                    move |query: web::Query<routes::depth_price_history::QueryParams>| {
+                        get_depth_price_history(value.clone(), query)
+                    }
+                }),
+            )
+            .route(
+                "/swaps_history",
+                web::get().to({
+                    let value = pool.clone();
+                    move |query: web::Query<routes::swaps_history::SwapQueryParams>| {
+                        get_swap_history(value.clone(), query)
+                    }
+                }),
+            )
+            .route(
+                "/earnings_history",
+                web::get().to({
+                    let value = pool.clone();
+                    move |query: web::Query<routes::earnings_history::EarningHistoryQueryParams>| {
+                        get_earning_history(value.clone(), query)
+                    }
+                }),
+            )
     })
     .bind("127.0.0.1:8080")?
     .run()

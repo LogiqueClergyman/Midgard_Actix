@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Debug)]
-pub struct SwapHistory {
+pub struct SwapsHistory {
     pub id: Option<i32>,
     pub startTime: i64,              // UNIX timestamp as i64
     pub endTime: i64,                // UNIX timestamp as i64
