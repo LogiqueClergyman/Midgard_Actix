@@ -6,9 +6,9 @@ services:
     buildCommand: |
       echo "Creating symlinks for Render..."
       mkdir -p src
-      ln -s ../populate src/populate
-      ln -s ../server src/server
-      ln -s ../shared src/shared
+      ln -sf /opt/render/project/populate src/populate
+      ln -sf /opt/render/project/server src/server
+      ln -sf /opt/render/project/shared src/shared
       echo "Building workspace..."
       cargo build --workspace
     startCommand: cargo run --release --bin server
