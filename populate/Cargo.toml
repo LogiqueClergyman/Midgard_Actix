@@ -1,5 +1,5 @@
 [package]
-name = "script-4"
+name = "populate"
 version = "0.1.0"
 edition = "2021"
 
@@ -13,3 +13,5 @@ sqlx = {version = "0.8.2", features = ["runtime-tokio-rustls", "macros", "postgr
 tokio = {version ="1.41.1", features = ["full"]}
 bigdecimal = "0.4.6"
 cron = "0.13.0"
+
+[lib]

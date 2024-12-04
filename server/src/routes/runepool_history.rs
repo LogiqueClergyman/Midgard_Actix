@@ -1,19 +1,17 @@
 use super::utils::{paginate, add_condition};
 use crate::models::runepool_history::{QueryParams, RunepoolHistory};
 use actix_web::{web, HttpResponse, Responder};
-use sqlx::{Pool, Postgres};
 use std::sync::Arc;
 
 pub async fn get_runepool_history(
-    pool: web::Data<Arc<tokio::sync::Mutex<Pool<Postgres>>>>,
+    pool: web::Data<Arc<sqlx::PgPool>>,
     query: web::Query<QueryParams>,
 ) -> impl Responder {
     println!("getting_runepool_history");
     let query_str = build_query(&query);
     println!("connecting: {}", query_str);
-    let pool = pool.lock().await;
     let rows = sqlx::query_as::<_, RunepoolHistory>(&query_str)
-        .fetch_all(&*pool)
+        .fetch_all(&***pool)
         .await;
     match rows {
         Ok(rows) => HttpResponse::Ok().json(rows),

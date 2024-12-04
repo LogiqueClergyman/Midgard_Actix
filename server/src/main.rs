@@ -7,6 +7,9 @@ use routes::{
     runepool_history::get_runepool_history, swaps_history::get_swap_history,
 };
 use shared::create_db_pool;
+use populate::scripts::cron_job::start_cron_job;
+
+
 #[actix_web::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let pool = match create_db_pool().await {
@@ -16,8 +19,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             return Err("Error creating pool".into());
         }
     };
-    create_db_pool().await.unwrap();
-    let pool = web::Data::new(pool.clone());
+    let pool_clone = pool.clone();
+
+    let pool = web::Data::new(pool);
+
+    // Spawn the cron job (no need for another runtime, Actix uses tokio)
+    tokio::spawn(async move {
+        println!("Starting cron job");
+        start_cron_job(pool_clone).await;
+    });
 
     let _ = HttpServer::new(move || {
         App::new()

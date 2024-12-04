@@ -5,15 +5,14 @@ use sqlx::{Pool, Postgres};
 use std::sync::Arc;
 
 pub async fn get_swap_history(
-    pool: web::Data<Arc<tokio::sync::Mutex<Pool<Postgres>>>>,
+    pool: web::Data<Arc<sqlx::PgPool>>,
     query: web::Query<SwapQueryParams>,
 ) -> impl Responder {
     println!("Getting swap history");
     let query_str = build_swap_query(&query);
     println!("Generated query: {}", query_str);
-    let pool = pool.lock().await;
     let rows = sqlx::query_as::<_, SwapHistory>(&query_str)
-        .fetch_all(&*pool)
+        .fetch_all(&***pool)
         .await;
     match rows {
         Ok(rows) => HttpResponse::Ok().json(rows),
