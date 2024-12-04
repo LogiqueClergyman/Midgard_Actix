@@ -1,6 +1,6 @@
 [workspace]
 members = [
-    "populate",
-    "server",
-    "shared"
+    "./populate",
+    "./server",
+    "./shared"
 ]

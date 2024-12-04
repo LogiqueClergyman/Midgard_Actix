@@ -1,0 +1,14 @@
+services:
+  - type: web
+    name: my-rust-app
+
+    runtime: rust
+    buildCommand: |
+      echo "Creating symlinks for Render..."
+      mkdir -p src
+      ln -s ../populate src/populate
+      ln -s ../server src/server
+      ln -s ../shared src/shared
+      echo "Building workspace..."
+      cargo build --workspace
+    startCommand: cargo run --release --bin server
