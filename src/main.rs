@@ -32,53 +32,53 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         App::new()
             .app_data(pool.clone())
             .service(web::resource("/").to(|| async { "Hello, world!" }))
-        // .route(
-        //     "/depth_history",
-        //     web::get().to({
-        //         let pool = pool.clone();
-        //         move |query: web::Query<models::depth_price_history::QueryParams>| {
-        //             routes::depth_price_history::get_depth_price_history(
-        //                 web::Data::new(pool.clone()),
-        //                 query,
-        //             )
-        //         }
-        //     }),
-        // )
-        // .route(
-        //     "/runepool_history",
-        //     web::get().to({
-        //         let pool = pool.clone();
-        //         move |query: web::Query<models::runepool_history::QueryParams>| {
-        //             routes::runepool_history::get_runepool_history(
-        //                 web::Data::new(pool.clone()),
-        //                 query,
-        //             )
-        //         }
-        //     }),
-        // )
-        // .route(
-        //     "/swaps_history",
-        //     web::get().to({
-        //         let pool = pool.clone();
-        //         move |query: web::Query<models::swaps_history::SwapQueryParams>| {
-        //             routes::swaps_history::get_swap_history(web::Data::new(pool.clone()), query)
-        //         }
-        //     }),
-        // )
-        // .route(
-        //     "/earnings_history",
-        //     web::get().to({
-        //         let pool = pool.clone();
-        //         move |query: web::Query<models::earnings_history::EarningHistoryQueryParams>| {
-        //             routes::earnings_history::get_earning_history(
-        //                 web::Data::new(pool.clone()),
-        //                 query,
-        //             )
-        //         }
-        //     }),
-        // )
+        .route(
+            "/depth_history",
+            web::get().to({
+                let pool = pool.clone();
+                move |query: web::Query<models::depth_price_history::QueryParams>| {
+                    routes::depth_price_history::get_depth_price_history(
+                        web::Data::new(pool.clone()),
+                        query,
+                    )
+                }
+            }),
+        )
+        .route(
+            "/runepool_history",
+            web::get().to({
+                let pool = pool.clone();
+                move |query: web::Query<models::runepool_history::QueryParams>| {
+                    routes::runepool_history::get_runepool_history(
+                        web::Data::new(pool.clone()),
+                        query,
+                    )
+                }
+            }),
+        )
+        .route(
+            "/swaps_history",
+            web::get().to({
+                let pool = pool.clone();
+                move |query: web::Query<models::swaps_history::SwapQueryParams>| {
+                    routes::swaps_history::get_swap_history(web::Data::new(pool.clone()), query)
+                }
+            }),
+        )
+        .route(
+            "/earnings_history",
+            web::get().to({
+                let pool = pool.clone();
+                move |query: web::Query<models::earnings_history::EarningHistoryQueryParams>| {
+                    routes::earnings_history::get_earning_history(
+                        web::Data::new(pool.clone()),
+                        query,
+                    )
+                }
+            }),
+        )
     })
-    .bind(format!("127.0.0.1:{}", port))?
+    .bind(format!("0.0.0.0:{}", port))?
     .run()
     .await;
     Ok(())
