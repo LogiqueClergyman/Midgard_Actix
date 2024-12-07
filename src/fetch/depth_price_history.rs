@@ -12,7 +12,19 @@ pub async fn fetch_and_insert_data(pool: &sqlx::PgPool) -> Result<(), Box<dyn st
             from_time
         );
         println!("{:?}", url);
-        let response: Value = get(&url).await.unwrap().json().await?;
+        let response: Value = match get(&url).await {
+            Ok(resp) => match resp.json().await {
+                Ok(json) => json,
+                Err(err) => {
+                    eprintln!("JSON parse error: {}", err);
+                    break;
+                }
+            },
+            Err(err) => {
+                eprintln!("Fetch error: {}", err);
+                break;
+            }
+        };
         if let Some(intervals) = response["intervals"].as_array() {
             for entry in intervals {
                 let depth_price_history: DepthPriceHistory = serde_json::from_value(entry.clone())?;

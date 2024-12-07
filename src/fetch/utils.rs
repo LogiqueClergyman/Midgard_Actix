@@ -1,6 +1,7 @@
 use chrono::NaiveDate;
 use sqlx::Row;
-
+use reqwest::Error;
+use serde_json::Value;
 pub async fn get_last_successful_entry_for_table(pool: &sqlx::PgPool, table_name: &str) -> i64 {
     let default_timestamp = NaiveDate::from_ymd_opt(2024, 10, 1)
         .unwrap_or_else(|| panic!("Invalid date"))
@@ -22,5 +23,22 @@ pub async fn get_last_successful_entry_for_table(pool: &sqlx::PgPool, table_name
             .get::<Option<i64>, _>("last_successful_entry")
             .unwrap_or(default_timestamp),
         Err(_) => default_timestamp,
+    }
+}
+
+async fn fetch_and_parse_json(url: &str) -> Result<Value, String> {
+    // Attempt to fetch the URL
+    match reqwest::get(url).await {
+        Ok(resp) => match resp.json().await {
+            Ok(json) => Ok(json),
+            Err(err) => {
+                eprintln!("JSON parse error: {}", err);
+                Err("JSON parse error".into())
+            }
+        },
+        Err(err) => {
+            eprintln!("Fetch error: {}", err);
+            Err("Fetch error".into())
+        }
     }
 }

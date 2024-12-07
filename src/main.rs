@@ -20,7 +20,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             return Err("Error creating pool".into());
         }
     };
-    migrations::run_migrations(&pool).await?;
+    if let Err(err) = migrations::run_migrations(&pool).await {
+        eprintln!("Migration failed: {}", err);
+    }
     tokio::spawn({
         let pool = Arc::clone(&pool);
         async move {

@@ -1,4 +1,3 @@
-// use super::utils::get_last_successful_entry_for_table;
 use crate::fetch::utils::get_last_successful_entry_for_table;
 use crate::models::earnings_history::{EarningHistory, EarningHistoryNested};
 use chrono::Utc;
