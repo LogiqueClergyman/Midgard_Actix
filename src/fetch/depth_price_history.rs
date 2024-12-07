@@ -17,12 +17,12 @@ pub async fn fetch_and_insert_data(pool: &sqlx::PgPool) -> Result<(), Box<dyn st
                 Ok(json) => json,
                 Err(err) => {
                     eprintln!("JSON parse error: {}", err);
-                    break;
+                    continue;
                 }
             },
             Err(err) => {
                 eprintln!("Fetch error: {}", err);
-                break;
+                continue;
             }
         };
         if let Some(intervals) = response["intervals"].as_array() {

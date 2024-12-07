@@ -73,27 +73,25 @@ fn build_query(query: &QueryParams) -> String {
             format!(
                 r#"
                 WITH grouped_data AS (
-    SELECT
-        (start_time / {interval_seconds}) * {interval_seconds} AS bracket_start,
-        *,
-        ROW_NUMBER() OVER (
-            PARTITION BY (start_time / {interval_seconds})
-            ORDER BY {sort_by} DESC
-        ) AS rank
-    FROM depth_price_history
-    WHERE {where_sql}
-)
-SELECT
-    MIN(grouped_data.bracket_start) AS start_time,
-    MAX(grouped_data.end_time) AS end_time,
-    *
-FROM grouped_data
-WHERE grouped_data.rank = 1
-GROUP BY grouped_data.bracket_start
-ORDER BY grouped_data.{sort_by} {order_sql}  -- Fixed here
-LIMIT {limit} OFFSET {offset}
-
-
+                    SELECT
+                        (start_time / {interval_seconds}) * {interval_seconds} AS bracket_start,
+                        *,
+                        ROW_NUMBER() OVER (
+                            PARTITION BY (start_time / {interval_seconds})
+                            ORDER BY {sort_by} DESC
+                        ) AS rank
+                        FROM depth_price_history
+                        WHERE {where_sql}
+                    )
+                    SELECT
+                        MIN(grouped_data.bracket_start) AS start_time,
+                        MAX(grouped_data.end_time) AS end_time,
+                        *
+                    FROM grouped_data
+                    WHERE grouped_data.rank = 1
+                    GROUP BY grouped_data.bracket_start
+                    ORDER BY grouped_data.{sort_by} {order_sql}  -- Fixed here
+                    LIMIT {limit} OFFSET {offset}
                 "#,
                 interval_seconds = interval_seconds,
                 where_sql = where_sql,
