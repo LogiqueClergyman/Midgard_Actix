@@ -1,10 +1,19 @@
-[workspace]
-members = [
-    "populate/script-1",
-    "populate/script-2",
-    "populate/script-3",
-    "populate/script-4",
-    "server",
-    "cron-job",
-    "shared"
-]
+[package]
+name = "pool-data"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+actix-web = "4.9.0"
+actix-rt = "2.10.0"
+serde = { version = "1.0.215", features = ["derive"] }
+serde_json = "1.0"
+sqlx = { version = "0.8.2", features = ["runtime-tokio-rustls", "macros", "postgres", "chrono","bigdecimal"] }
+tokio = { version = "1.41.1", features = ["full"] }
+chrono = "0.4.38"
+rust_decimal = "1.36.0"
+reqwest = { version = "0.12.9", features = ["blocking", "json"] }
+cron = "0.13.0"
+lazy_static = "1.5.0"
+dotenvy = "0.15.7"
+bigdecimal = { version = "0.4.6", features = ["serde"] }
