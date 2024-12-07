@@ -3,7 +3,7 @@ use std::fs;
 use std::path::Path;
 
 pub async fn run_migrations(pool: &sqlx::PgPool) -> Result<(), Error> {
-    let migrations_dir = Path::new("../migrations");
+    let migrations_dir = Path::new("migrations");
     if !migrations_dir.exists() {
         println!("Migration directory does not exist.");
     } else {
