@@ -22,7 +22,8 @@ pub async fn get_runepool_history(
 
 fn build_query(query: &QueryParams) -> String {
     let mut where_clauses: Vec<String> = vec![];
-
+    add_condition(&mut where_clauses, "start_time", &query.from, ">");
+    add_condition(&mut where_clauses, "end_time", &query.to, "<");
     add_condition(&mut where_clauses, "units", &query.units_gt, ">");
     add_condition(&mut where_clauses, "units", &query.units_lt, "<");
     add_condition(&mut where_clauses, "units", &query.units_eq, "=");

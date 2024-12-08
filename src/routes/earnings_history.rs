@@ -14,9 +14,7 @@ pub async fn get_earning_history(
         .await;
 
     match rows {
-        Ok(deserialized_rows) => {
-            HttpResponse::Ok().json(deserialized_rows)
-        },
+        Ok(deserialized_rows) => HttpResponse::Ok().json(deserialized_rows),
         Err(err) => HttpResponse::InternalServerError().json({
             serde_json::json!({"error": "Error fetching data", "details": err.to_string()})
         }),
@@ -27,6 +25,8 @@ fn build_earning_history_query(query: &EarningHistoryQueryParams) -> String {
     let mut where_clauses = vec![];
 
     // Dynamic filters for earning_history fields
+    add_condition(&mut where_clauses, "start_time", &query.from, ">");
+    add_condition(&mut where_clauses, "end_time", &query.to, "<");
     add_condition(
         &mut where_clauses,
         "avg_node_count",

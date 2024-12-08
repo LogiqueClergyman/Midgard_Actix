@@ -24,6 +24,8 @@ fn build_swap_query(query: &SwapQueryParams) -> String {
     let mut where_clauses = vec![];
 
     // Dynamic filters
+    add_condition(&mut where_clauses, "start_time", &query.from, ">");
+    add_condition(&mut where_clauses, "end_time", &query.to, "<");
     add_condition(
         &mut where_clauses,
         "to_asset_volume",
@@ -98,70 +100,39 @@ fn build_swap_query(query: &SwapQueryParams) -> String {
     let (pagination_limit, offset) = paginate(query.page, query.limit, query.count);
     let effective_limit = hard_limit.min(pagination_limit);
 
-    let interval_seconds = match query.interval.as_deref() {
-        Some("day") => 86400,     // 1 day = 86400 seconds (24 * 60 * 60)
-        Some("week") => 604800,   // 1 week = 604800 seconds (7 * 24 * 60 * 60)
-        Some("month") => 2592000, // 1 month ≈ 2592000 seconds (30 days)
-        Some("year") => 31536000, // 1 year = 31536000 seconds
-        _ => 3600,                // Default to hourly (1 hour = 60 * 60)
+    let interval = match query.interval.as_deref() {
+        Some("hour") => "hour",
+        Some("day") => "day",     // Truncate to day
+        Some("week") => "week",   // Truncate to week
+        Some("month") => "month", // Truncate to month
+        Some("year") => "year",   // Truncate to year
+        _ => "hour",              // Default to hourly
     };
 
-    // Build the SQL query
+    // Build the SQL query with DATE_TRUNC for grouping
     format!(
         r#"
-        WITH grouped_data AS (
-            SELECT
-                -- Calculate the start of the time bracket based on the interval
-                CASE
-                    WHEN {interval_seconds} = 86400 THEN (start_time / 86400) * 86400  -- Day
-                    WHEN {interval_seconds} = 604800 THEN (start_time / 604800) * 604800  -- Week
-                    WHEN {interval_seconds} = 2592000 THEN (start_time / 2592000) * 2592000  -- Month
-                    WHEN {interval_seconds} = 31536000 THEN (start_time / 31536000) * 31536000  -- Year
-                    ELSE start_time  -- Default to hourly (no change)
-                END AS bracket_start,
-                
-                -- Select all columns from swap_history
-                sh.*,  
-                
-                -- Row numbering to partition by bracket_start
-                ROW_NUMBER() OVER (
-                    PARTITION BY 
-                        CASE
-                            WHEN {interval_seconds} = 86400 THEN (start_time / 86400) * 86400  -- Day
-                            WHEN {interval_seconds} = 604800 THEN (start_time / 604800) * 604800  -- Week
-                            WHEN {interval_seconds} = 2592000 THEN (start_time / 2592000) * 2592000  -- Month
-                            WHEN {interval_seconds} = 31536000 THEN (start_time / 31536000) * 31536000  -- Year
-                            ELSE start_time  -- Default to hourly (no change)
-                        END
-                    ORDER BY {sort_by} DESC  -- Sort by the requested column
-                ) AS rank
-            FROM swap_history sh
-            WHERE {where_sql}  -- Apply dynamic WHERE conditions
-        )
-        
-        -- Select the aggregated results
-        SELECT
-            MIN(bracket_start) AS start_time,  -- Start time for the time bracket
-            MAX(end_time) AS end_time,        -- End time for the time bracket
-            avg_node_count,                    -- Average node count
-            block_rewards,                     -- Block rewards
-            bonding_earnings,                  -- Bonding earnings
-            earnings,                          -- Earnings
-            liquidity_earnings,                -- Liquidity earnings
-            liquidity_fees,                    -- Liquidity fees
-            rune_price_usd,                    -- Rune price in USD
-            nested_pools AS pool               -- Aggregated pool data (from subquery)
-        FROM grouped_data
-        WHERE rank = 1  -- Ensure we select the most recent record within the group
-        GROUP BY 
-            avg_node_count, block_rewards, bonding_earnings, earnings, 
-            liquidity_earnings, liquidity_fees, rune_price_usd, nested_pools
-        ORDER BY {sort_by} {order_sql}  -- Sorting based on user input
-        LIMIT {limit} OFFSET {offset}  -- Pagination: limit and offset for results
-        "#,
-        interval_seconds = interval_seconds,
+    WITH first_and_last_hours AS (
+        SELECT 
+            DATE_TRUNC('{interval}', to_timestamp(start_time)) AS bracket_start,
+            MIN(start_time) AS first_hour_start_time,
+            MAX(start_time) AS last_hour_start_time
+        FROM swap_history
+        WHERE {where_sql}
+        GROUP BY DATE_TRUNC('{interval}', to_timestamp(start_time))
+    )
+    SELECT 
+        fh.bracket_start,
+        fh.first_hour_start_time AS start_time,
+        last_sh.*
+    FROM first_and_last_hours fh
+    JOIN swap_history last_sh ON last_sh.start_time = fh.last_hour_start_time
+    WHERE {where_sql}
+    ORDER BY fh.bracket_start {order_sql}
+    LIMIT {limit} OFFSET {offset}
+"#,
+        interval = interval,
         where_sql = where_sql,   // Dynamic WHERE conditions
-        sort_by = sort_by,       // Sort field (e.g., "start_time")
         order_sql = order_sql,   // Sorting order (asc/desc)
         limit = effective_limit, // Pagination limit
         offset = offset          // Pagination offset
