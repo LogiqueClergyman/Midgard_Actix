@@ -23,12 +23,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     if let Err(err) = migrations::run_migrations(&pool).await {
         eprintln!("Migration failed: {}", err);
     }
-    // tokio::spawn({
-    //     let pool = Arc::clone(&pool);
-    //     async move {
-    //         fetch::cron_job::start_cron_job(pool).await;
-    //     }
-    // });
+    tokio::spawn({
+        let pool = Arc::clone(&pool);
+        async move {
+            fetch::cron_job::start_cron_job(pool).await;
+        }
+    });
     let port = std::env::var("PORT").unwrap_or_else(|_| "8080".to_string());
     let _ = HttpServer::new(move || {
         App::new()
